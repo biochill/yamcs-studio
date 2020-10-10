@@ -1,5 +1,7 @@
 # Yamcs Studio
 
+This is Yamcs Studio with a video feed widget.
+
 ## Binary Releases
 
 https://github.com/yamcs/yamcs-studio/releases/

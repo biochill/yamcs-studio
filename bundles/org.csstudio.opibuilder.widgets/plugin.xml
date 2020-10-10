@@ -345,6 +345,15 @@
             name="Web Browser"
             typeId="org.csstudio.opibuilder.widgets.webbrowser">
       </widget>
+	  <widget
+		  category="Others"
+		  description="A widget displays a video feed in a browser."
+		  editpart_class="org.csstudio.opibuilder.widgets.editparts.VideoFeedEditPart"
+		  icon="icons/web_browser.png"
+		  model_class="org.csstudio.opibuilder.widgets.model.VideoFeedModel"
+		  name="Video Feed"
+		  typeId="org.csstudio.opibuilder.widgets.videofeed">
+	  </widget>
       <widget
             category="Others"
             description="A container that could contains an array of other widgets."

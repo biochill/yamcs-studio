@@ -47,6 +47,8 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
     private int prevPicOrderCntLsb;
     private int frameNo;
 
+	public double fps;
+
 	/**
 	 * Constructor
 	 */
@@ -58,6 +60,7 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 		videoBuffer.limit(0);
 		lastPacketMark = -1;
         this.frameNo = 0;
+		fps = 0;Ï
     }
 
 	/**
@@ -166,6 +169,20 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 				// Remember SPS
                 SeqParameterSet read = SeqParameterSet.read(buf);
                 sps.put(read.seqParameterSetId, read);
+				
+				VUIParameters vui = read.vuiParams;
+				if (vui != null) {
+					if (vui.timingInfoPresentFlag) {
+						if (vui.fixedFrameRateFlag) {
+							fps = (double)(vui.timeScale) / (double)(2 * vui.numUnitsInTick);
+//							System.out.println(String.format("    fps=%.3f timeScale=%d units=%d fixedFrameRate=%b", fps, vui.timeScale, vui.numUnitsInTick, vui.fixedFrameRateFlag));
+						} else {
+							fps = 1000000.0 / ((double)(vui.timeScale) / (double)vui.numUnitsInTick);
+//							System.out.println(String.format("    fps=%.0f (%.3f) timeScale=%d units=%d fixedFrameRate=%b", fps, fps, vui.timeScale, vui.numUnitsInTick, vui.fixedFrameRateFlag));
+						}
+					}
+				}
+
 			} else if (nu.type == NALUnitType.ACC_UNIT_DELIM) {
 				// AUD units usually appear before SPS/PPS units.
 				// We use it in case we have started parsing mid-stream.
@@ -178,6 +195,8 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 
 		return null;
     }
+
+	// MARK: - Copied from BufferH264ES
 
 	/**
 	 * Mostly copied from BufferH264ES, with some checks.
@@ -224,6 +243,7 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 
 	/**
 	 * Copied from BufferH264ES.
+	 * Fixed reseting POC Lsb/Msb.
 	 */
     private Packet detectPoc(ByteBuffer result, NALUnit nu, SliceHeader sh) {
         int maxFrameNum = 1 << (sh.sps.log2MaxFrameNumMinus4 + 4);
@@ -235,6 +255,9 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
         int poc = 0;
         if (nu.type == NALUnitType.NON_IDR_SLICE) {
             poc = calcPoc(absFrameNum, nu, sh);
+		} else {
+			prevPicOrderCntMsb = 0;
+			prevPicOrderCntLsb = 0;
         }
         return new Packet(result, absFrameNum, 1, 1, frameNo++, nu.type == NALUnitType.IDR_SLICE ? FrameType.KEY : FrameType.INTER, null, poc);
     }
@@ -299,7 +322,6 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 	 * Copied from BufferH264ES.
 	 */
     private int calcPOC1(int absFrameNum, NALUnit nu, SliceHeader sh) {
-
         if (sh.sps.numRefFramesInPicOrderCntCycle == 0)
             absFrameNum = 0;
         if (nu.nal_ref_idc == 0 && absFrameNum > 0)
@@ -330,7 +352,6 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 	 * Copied from BufferH264ES.
 	 */
     private int calcPOC0(NALUnit nu, SliceHeader sh) {
-
         int pocCntLsb = sh.picOrderCntLsb;
         int maxPicOrderCntLsb = 1 << (sh.sps.log2MaxPicOrderCntLsbMinus4 + 4);
 
@@ -426,6 +447,8 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
         return tracks;
     }
 
+	// MARK: - Copied from H264Utils
+	
 	/**
 	 * Copied and modified from H264Utils.java (JCodec).
 	 * The original method parses until the end of the buffer and always returns a buffer.

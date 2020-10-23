@@ -20,8 +20,8 @@ import java.util.LinkedList;
 
 import org.jcodec.codecs.h264.H264Decoder;
 import org.jcodec.codecs.h264.H264Utils;
+import org.jcodec.codecs.h264.io.model.Frame;
 import org.jcodec.common.model.Packet;
-import org.jcodec.common.model.Picture;
 import org.jcodec.javase.scale.AWTUtil;
 import org.jcodec.api.JCodecException;
 
@@ -187,7 +187,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 				int expectedCount = (prevSeqCount + 1) & 0xffff;
 				if (expectedCount != seqCount) {
 					// Jump detected -> stream is interrupted, we need to reset the decoder and streamer, and wait for new SPS/PPS units
-					setFigureText(String.format("Sequence counter jumped (%d -> %d), waiting for good frame", prevSeqCount, seqCount));
+					setFigureText(String.format("Sequence counter jumped (%d -> %d), waiting for key frame", prevSeqCount, seqCount));
 					h264Adaptor = null;
 					videoTrack.reset();
 				}
@@ -222,48 +222,55 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	{
 		videoTrack.injectChunk(bb);
 
-		Packet frame = videoTrack.nextFrame();
+		Packet packet = videoTrack.nextFrame();
 		
-		if (frame != null) {
-
-			long time1 = System.currentTimeMillis();
+		if (packet != null) {
 			
-			// Create new decoder if there is a useful frame
+			// Create new decoder if there is a useful packet
 			if (h264Adaptor == null) {
 				// Score: +60 = contains image, +20 = contains SPS, +20 = contains PPS
-				int score = H264Decoder.probe(frame.getData());
+				int score = H264Decoder.probe(packet.getData());
 				if (score == 100) {
 					if (HAVE_DEBUG_OUTPUT) {
 						debugOutput("Allocating new H264 decoder with healthy packet");
 					} else {
 						setFigureText(""); // Remove text
 					}
-					h264Adaptor = new VideoH264Adaptor(frame.getData());
+					h264Adaptor = new VideoH264Adaptor(packet.getData());
 				} else {
 					// Not a H264 packet, or missing PPS/SPS NALUs
-//					debugOutput("Could not decode frame, waiting for more data");
+//					debugOutput("Could not decode packet, waiting for more data");
 				}
 			}
-			if (h264Adaptor != null) {
-				Picture pic = h264Adaptor.decodeFrame(frame);
-				if (pic != null) {
-					BufferedImage image = AWTUtil.toBufferedImage(pic);
-//					debugOutput("feed mark 10 " + pic.getWidth() + "x" + pic.getHeight() + " " + image.getColorModel().getClass().getName());
-					getVideoFeedFigure().setVideoData(image);
 
-					// Set some details to be displayed
+			if (h264Adaptor != null) {
+
+				try {
+					long time1 = System.currentTimeMillis();
+					h264Adaptor.addPacket(packet);
 					long time2 = System.currentTimeMillis();
 					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
-					getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(frame.getFrameNo()));
-					getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, pic.getWidth() + "x" + pic.getHeight());
-					getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
-				} else {
-					debugOutput("Could not decode image " + frame.getFrameNo());
+
+					while (h264Adaptor.hasNextFrame()) {
+						Frame pic = h264Adaptor.getNextFrame();
+						BufferedImage image = AWTUtil.toBufferedImage(pic);
+	//					debugOutput("feed mark 10 " + pic.getWidth() + "x" + pic.getHeight() + " " + image.getColorModel().getClass().getName());
+						getVideoFeedFigure().setVideoData(image);
+
+						// Set some details to be displayed
+						getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(packet.getFrameNo()));
+						getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, pic.getWidth() + "x" + pic.getHeight());
+						getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
+					} // while
+					
+				} catch (JCodecException e) {
+					debugOutput(e.getMessage());
 					h264Adaptor = null;
 				}
-			}
+				
+			} // have adapter
 			
-		} // no frame
+		} // no packet
 		
 	}
 }

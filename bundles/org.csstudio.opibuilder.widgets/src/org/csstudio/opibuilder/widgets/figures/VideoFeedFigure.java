@@ -41,7 +41,8 @@ public final class VideoFeedFigure extends Figure {
 	private final VideoDetailMap videoDetails = VideoDetailMap.videoDetails();
 	private boolean isDetailsVisible = false;
 	private long lastFrameTime = 0;
-	private double currentFPS = 0.0;
+	private double realFPS = 0.0;
+	private double videoFPS = 0.0;
 
 	/**
 	 * Dispose the resources used by this figure.
@@ -60,6 +61,13 @@ public final class VideoFeedFigure extends Figure {
 
 	public void setDetail(String key, String value) {
 		videoDetails.setValue(key, value);
+		if (isDetailsVisible) {
+			repaint();
+		}
+	}
+	
+	public void setVideoFPS(double fps) {
+		videoFPS = fps;
 		if (isDetailsVisible) {
 			repaint();
 		}
@@ -146,12 +154,12 @@ public final class VideoFeedFigure extends Figure {
 			dataDescription = "Image Error";
 			throw new JCodecException("Unsupported color model");
 		}
-		image = new Image(Display.getCurrent(), imageData);
+		image = new Image(Display.getDefault(), imageData);
 		
 		// Update FPS
 		long now = System.currentTimeMillis();
 		if (now - lastFrameTime > 0)
-			currentFPS = 1.0/((double)(now - lastFrameTime)*0.001);
+			realFPS = 1.0/((double)(now - lastFrameTime)*0.001);
 		lastFrameTime = now;
 		
 		repaint();
@@ -200,10 +208,10 @@ public final class VideoFeedFigure extends Figure {
 			gfx.fillText(dataDescription, (bounds.width - td.width)/2, 0);
 		}
 		
-		if (image != null && isDetailsVisible) {
+		if (isDetailsVisible) {
 			// Draw text about additional infos
 			videoDetails.setValue(VideoDetailMap.Render, String.format("%.3f", (double)renderMillis*0.001));
-			videoDetails.setValue(VideoDetailMap.FPS, String.format("%.1f", currentFPS));
+			videoDetails.setValue(VideoDetailMap.FPS, String.format("%.1f (%.0f)", realFPS, videoFPS));
 			videoDetails.draw(gfx, bounds, VideoDetailMap.Corner.LEFT_BOTTOM);
 		}
 

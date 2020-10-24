@@ -16,6 +16,7 @@ import org.jcodec.codecs.h264.io.model.RefPicMarking;
 import org.jcodec.codecs.h264.io.model.RefPicMarking.InstrType;
 import org.jcodec.codecs.h264.io.model.SeqParameterSet;
 import org.jcodec.codecs.h264.io.model.SliceHeader;
+import org.jcodec.codecs.h264.io.model.VUIParameters;
 import org.jcodec.common.Demuxer;
 import org.jcodec.common.DemuxerTrack;
 import org.jcodec.common.DemuxerTrackMeta;
@@ -60,7 +61,7 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 		videoBuffer.limit(0);
 		lastPacketMark = -1;
         this.frameNo = 0;
-		fps = 0;Ï
+		fps = 0;
     }
 
 	/**

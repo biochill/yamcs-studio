@@ -46,9 +46,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 		expectedPoc = 0;
 	}
 
-	void addPacket(Packet packet) throws JCodecException {
-		long time1 = System.currentTimeMillis();
-		
+	synchronized void addPacket(Packet packet) throws JCodecException {
 		Frame frame = decodePacket(packet);
 		if (frame == null)
 			throw new JCodecException("Could not decode packet " + packet.getFrameNo());
@@ -75,10 +73,6 @@ public class VideoH264Adaptor implements ContainerAdaptor
 			gop.add(frame);
 			sortByDisplay(gop);
 		}
-		
-		long time2 = System.currentTimeMillis();
-		double delta = (double)(time2 - time1)*0.001;
-		System.out.println(String.format("Added frame poc=%d, decode-time=%.3f", frame.getPOC(), delta));
 	}
 	
 	/**
@@ -102,8 +96,8 @@ public class VideoH264Adaptor implements ContainerAdaptor
 			}
 		});
 	}
-	
-	boolean hasNextFrame() {
+
+	synchronized boolean hasNextFrame() {
 		if (!orderedFrames.isEmpty()) {
 			ArrayList<Frame> gop = orderedFrames.getFirst();
 			if (!gop.isEmpty()) {
@@ -111,23 +105,24 @@ public class VideoH264Adaptor implements ContainerAdaptor
 				Frame frame = gop.get(0);
 				return frame.getPOC() == expectedPoc;
 			}
-			if (orderedFrames.size() >=2) {
-				// There is a second GOP which has at least one frame.
-				return true;
-			}
 		}
 		return false;
 	}
-	
-	Frame getNextFrame() throws NoSuchElementException {
-		ArrayList<Frame> gop = orderedFrames.peek();
-		Frame frame = gop.get(0);
-		if (frame.getPOC() != expectedPoc) {
-			throw new NoSuchElementException();
+
+	synchronized Frame getNextFrame() {
+		if (!orderedFrames.isEmpty()) {
+			ArrayList<Frame> gop = orderedFrames.getFirst();
+			if (!gop.isEmpty()) {
+				// Get the next frame and check its POC
+				Frame frame = gop.get(0);
+				if (frame.getPOC() == expectedPoc) {
+					gop.remove(0);
+					expectedPoc += 2;
+					return frame;
+				}
+			}
 		}
-		gop.remove(0);
-		expectedPoc += 2;
-		return frame;
+		return null;
 	}
 
 	// MARK: - Overrides

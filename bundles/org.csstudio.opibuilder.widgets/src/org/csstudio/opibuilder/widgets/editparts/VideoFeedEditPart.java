@@ -17,6 +17,8 @@ import java.nio.ByteBuffer;
 import java.nio.BufferOverflowException;
 import java.util.List;
 import java.util.LinkedList;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import org.jcodec.codecs.h264.H264Decoder;
 import org.jcodec.codecs.h264.H264Utils;
@@ -39,6 +41,8 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	private VideoStreamH264ES videoTrack = new VideoStreamH264ES();
 	private VideoH264Adaptor h264Adaptor = null;
 	private int prevSeqCount = -1;
+	private FrameTask frameTask;
+	private Timer frameTimer;
 
 	/**
 	 * Constructor.
@@ -88,6 +92,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	@Override
 	public void activate() {
 		super.activate();
+		frameTimer = new Timer();
 	}
 	
 	/**
@@ -98,6 +103,12 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	public void deactivate() {
 		super.deactivate();
 		getVideoFeedFigure().dispose();
+
+		if (frameTimer != null) {
+			frameTimer.cancel();
+			frameTimer = null;
+		}
+		frameTask = null;
 	}
 	
 	// MARK: - Helpers
@@ -108,7 +119,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	protected VideoFeedModel getVideoFeedModel() {
 		return (VideoFeedModel) getWidgetModel();
 	}
-	
+
 	/**
 	 * Convenience method to return the model cast to the relevant class.
 	 *
@@ -237,6 +248,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 						setFigureText(""); // Remove text
 					}
 					h264Adaptor = new VideoH264Adaptor(packet.getData());
+					getVideoFeedFigure().setVideoFPS(videoTrack.fps);
 				} else {
 					// Not a H264 packet, or missing PPS/SPS NALUs
 //					debugOutput("Could not decode packet, waiting for more data");
@@ -251,18 +263,10 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 					long time2 = System.currentTimeMillis();
 					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
 
-					while (h264Adaptor.hasNextFrame()) {
-						Frame pic = h264Adaptor.getNextFrame();
-						BufferedImage image = AWTUtil.toBufferedImage(pic);
-	//					debugOutput("feed mark 10 " + pic.getWidth() + "x" + pic.getHeight() + " " + image.getColorModel().getClass().getName());
-						getVideoFeedFigure().setVideoData(image);
-
-						// Set some details to be displayed
-						getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(packet.getFrameNo()));
-						getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, pic.getWidth() + "x" + pic.getHeight());
-						getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
-					} // while
-					
+					// Start new timer task to show new images. Otherwise wait until current time task will show it.
+					if (frameTask == null && h264Adaptor.hasNextFrame()) {
+						startSchedule();
+					}
 				} catch (JCodecException e) {
 					debugOutput(e.getMessage());
 					h264Adaptor = null;
@@ -272,5 +276,44 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 			
 		} // no packet
 		
+	} // func
+	
+	public class FrameTask extends TimerTask {
+
+		@Override
+		public void run() {
+			final Frame pic = h264Adaptor.getNextFrame();
+			if (pic != null) {
+
+				final BufferedImage image = AWTUtil.toBufferedImage(pic);
+				
+				Display.getDefault().asyncExec(new Runnable() {
+					public void run() {
+						try {
+							getVideoFeedFigure().setVideoData(image);
+							// Set some details to be displayed
+							getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
+							getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
+							getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
+						} catch (JCodecException e) {
+							debugOutput(e.getMessage());
+						}
+					}
+				});
+
+			} else {
+				cancel();
+				frameTask = null;
+			}
+
+		} // run
+	} // class
+	
+	void startSchedule() {
+		double fps = videoTrack.fps > 0.01 ? videoTrack.fps : 5;
+		long intervalMillis = (long)(1000.0/fps);
+		frameTask = new FrameTask();
+		frameTimer.scheduleAtFixedRate(frameTask, 0, intervalMillis);
 	}
+
 }

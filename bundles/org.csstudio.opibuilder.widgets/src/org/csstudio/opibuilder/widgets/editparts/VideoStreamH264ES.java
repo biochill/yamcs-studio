@@ -69,7 +69,7 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 	 * This method is called when irreparable problems occur while working on received video data.
 	 * It resets the video data buffer and internal state variables.
 	 */
-	void reset() {
+	void resetBuffer() {
 		videoBuffer.limit(0);
 		lastPacketMark = -1;
 		prevNu = null;
@@ -134,10 +134,24 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
             if (nu.type == NALUnitType.IDR_SLICE || nu.type == NALUnitType.NON_IDR_SLICE) {
                 SliceHeader sh = readSliceHeader(buf, nu);
 
-                if (prevNu != null && prevSh != null && sh != null && !sameFrame(prevNu, nu, prevSh, sh)) {
+				// Slice header not available? This means there is no current PPS, probably due to packet loss.
+				// -> flush buffer and keep reading NALUs.
+				if (sh == null) {
+//					System.out.println(String.format("  Found Slice @%d, discarding (no PPS) and flushing buffer", nalPos));
+					ByteBuffer newBuf = ByteBuffer.allocate(bb.capacity());
+					newBuf.put(bb);
+					newBuf.flip();
+					videoBuffer = newBuf;
+					bb = newBuf;
+					lastPacketMark = -1;
+					continue;
+				}
+				
+//				System.out.println(String.format("  Found Slice @%d, frameNum=%d type=%s ppsid=%d pocType=%d nal_ref_idc=%d", nalPos, sh.frameNum, sh.sliceType, sh.picParameterSetId, sh.sps.picOrderCntType, nu.nal_ref_idc));
+
+				if (prevNu != null && prevSh != null && !sameFrame(prevNu, nu, prevSh, sh)) {
                     bb.position(nalPos);
-//					System.out.println("  Found next Slice @" + nalPos + ", parsing packet @" + lastPacketMark + "-" + nalPos);
-					
+
 					// result = buffer with complete packet
 					ByteBuffer result = bb.duplicate();
 					result.position(lastPacketMark);

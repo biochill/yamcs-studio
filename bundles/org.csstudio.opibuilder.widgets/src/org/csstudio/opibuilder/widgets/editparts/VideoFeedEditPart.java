@@ -200,7 +200,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 					// Jump detected -> stream is interrupted, we need to reset the decoder and streamer, and wait for new SPS/PPS units
 					setFigureText(String.format("Sequence counter jumped (%d -> %d), waiting for key frame", prevSeqCount, seqCount));
 					h264Adaptor = null;
-					videoTrack.reset();
+					videoTrack.resetBuffer();
 				}
 			}
 			prevSeqCount = seqCount;
@@ -211,7 +211,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 		} catch (BufferOverflowException e) {
 			debugOutput("Could not inject buffer, reseting stream and decoder");
 			h264Adaptor = null;
-			videoTrack.reset();
+			videoTrack.resetBuffer();
 		} catch (JCodecException e) {
 			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, "-");
 			getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, "-");
@@ -268,7 +268,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 						startSchedule();
 					}
 				} catch (JCodecException e) {
-					debugOutput(e.getMessage());
+					debugOutput("Could not decode: " + e.getMessage());
 					h264Adaptor = null;
 				}
 				

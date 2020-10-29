@@ -50,7 +50,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 		Frame frame = decodePacket(packet);
 		if (frame == null)
 			throw new JCodecException("Could not decode packet " + packet.getFrameNo());
-		
+
 		// Is a key frame? -> Create new GOP and add it to the list
 		if (frame.getPOC() == 0) {
 			ArrayList<Frame> gop = new ArrayList<Frame>();
@@ -81,7 +81,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	 * @param packet a H.264 packet
 	 * @return Frame with image data
 	 */
-	protected Frame decodePacket(Packet packet) {
+	Frame decodePacket(Packet packet) {
 		if (vMeta == null) {
 			vMeta = decoder.getCodecMeta(packet.getData());
 		}

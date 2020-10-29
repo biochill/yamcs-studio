@@ -38,7 +38,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	
 	private List<String> textLines;
 	
-	private VideoStreamH264ES videoTrack = new VideoStreamH264ES();
+	private VideoStreamH264ES videoTrack;
 	private VideoH264Adaptor h264Adaptor = null;
 	private int prevSeqCount = -1;
 	private FrameTask frameTask;
@@ -51,6 +51,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 		super();
 
 		textLines = new LinkedList<String>();
+		videoTrack = new VideoStreamH264ES();
 	}
 
 	// MARK: - Overrides
@@ -234,7 +235,6 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 		videoTrack.injectChunk(bb);
 
 		Packet packet = videoTrack.nextFrame();
-		
 		if (packet != null) {
 			
 			// Create new decoder if there is a useful packet
@@ -258,14 +258,36 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 			if (h264Adaptor != null) {
 
 				try {
-					long time1 = System.currentTimeMillis();
-					h264Adaptor.addPacket(packet);
-					long time2 = System.currentTimeMillis();
-					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+					if (videoTrack.ignoreBFrames) {
+						// Just decode and display
+						
+						long time1 = System.currentTimeMillis();
+						Frame pic = h264Adaptor.decodePacket(packet);
+						long time2 = System.currentTimeMillis();
+						getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
 
-					// Start new timer task to show new images. Otherwise wait until current time task will show it.
-					if (frameTask == null && h264Adaptor.hasNextFrame()) {
-						startSchedule();
+						if (pic != null) {
+							final BufferedImage image = AWTUtil.toBufferedImage(pic);
+							getVideoFeedFigure().setVideoData(image);
+
+							// Set some details to be displayed
+							getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
+							getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
+							getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
+						}
+
+					} else {
+						// Decode and display according to fps timing
+						
+						long time1 = System.currentTimeMillis();
+						h264Adaptor.addPacket(packet);
+						long time2 = System.currentTimeMillis();
+						getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+						
+						// Start new timer task to show new images. Otherwise wait until current time task will show it.
+						if (frameTask == null && h264Adaptor.hasNextFrame()) {
+							startSchedule();
+						}
 					}
 				} catch (JCodecException e) {
 					debugOutput("Could not decode: " + e.getMessage());
@@ -274,7 +296,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 				
 			} // have adapter
 			
-		} // no packet
+		} // have packet
 		
 	} // func
 	

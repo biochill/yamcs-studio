@@ -81,11 +81,14 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	 * @param packet a H.264 packet
 	 * @return Frame with image data
 	 */
-	Frame decodePacket(Packet packet) {
+	public Frame decodePacket(Packet packet) throws JCodecException {
 		if (vMeta == null) {
 			vMeta = decoder.getCodecMeta(packet.getData());
 		}
-		return decoder.decodeFrame(packet.getData(), allocatePicture());
+		Frame frame = decoder.decodeFrame(packet.getData(), allocatePicture());
+		if (frame == null)
+			throw new JCodecException("Could not decode packet " + packet.getFrameNo());
+		return frame;
 	}
 	
 	protected void sortByDisplay(ArrayList<Frame> gop) {

@@ -23,6 +23,7 @@ import java.util.TimerTask;
 import org.jcodec.codecs.h264.H264Decoder;
 import org.jcodec.codecs.h264.H264Utils;
 import org.jcodec.codecs.h264.io.model.Frame;
+import org.jcodec.codecs.h264.io.model.SliceType;
 import org.jcodec.common.model.Packet;
 import org.jcodec.javase.scale.AWTUtil;
 import org.jcodec.api.JCodecException;
@@ -266,7 +267,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 						long time2 = System.currentTimeMillis();
 						getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
 
-						if (pic != null) {
+						if (pic.getFrameType() != SliceType.B) {
 							final BufferedImage image = AWTUtil.toBufferedImage(pic);
 							getVideoFeedFigure().setVideoData(image);
 

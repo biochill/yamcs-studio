@@ -155,33 +155,26 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 
 				if (prevNu != null && prevSh != null && !sameFrame(prevNu, nu, prevSh, sh)) {
 					
-					if (ignoreBFrames && prevSh.sliceType == SliceType.B) {
-						// Ignore B frame
-						lastPacketMark = -1;
-					} else {
-						// Create packet and return it
-					
-						bb.position(nalPos);
+					bb.position(nalPos);
 
-						// result = buffer with complete packet
-						ByteBuffer result = bb.duplicate();
-						result.position(lastPacketMark);
-						result.limit(nalPos);
-						Packet p = detectPoc(result, prevNu, prevSh);
-						if (p != null) {
-							// Have complete packet -> compact video buffer; we will re-read this slice NALU
-							ByteBuffer newBuf = ByteBuffer.allocate(bb.capacity());
-							newBuf.put(bb); // add remainder of videoBuffer
-							newBuf.flip();
-							videoBuffer = newBuf;
-							lastPacketMark = 0;
-	//						System.out.println("  Compacting video buffer, new buffer @" + videoBuffer.position() + "-" + videoBuffer.limit());
+					// result = buffer with complete packet
+					ByteBuffer result = bb.duplicate();
+					result.position(lastPacketMark);
+					result.limit(nalPos);
+					Packet p = detectPoc(result, prevNu, prevSh);
+					if (p != null) {
+						// Have complete packet -> compact video buffer; we will re-read this slice NALU
+						ByteBuffer newBuf = ByteBuffer.allocate(bb.capacity());
+						newBuf.put(bb); // add remainder of videoBuffer
+						newBuf.flip();
+						videoBuffer = newBuf;
+						lastPacketMark = 0;
+//						System.out.println("  Compacting video buffer, new buffer @" + videoBuffer.position() + "-" + videoBuffer.limit());
 
-							prevSh = null;
-							prevNu = null;
-						}
-						return p;
+						prevSh = null;
+						prevNu = null;
 					}
+					return p;
                 }
 				
 //				System.out.println("  Found Slice @" + nalPos);

@@ -7,6 +7,7 @@
  ******************************************************************************/
 package org.csstudio.opibuilder.util;
 
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.LinkedHashSet;
 import java.util.logging.Level;
 
@@ -38,8 +39,8 @@ public final class GUIRefreshThread implements Runnable {
      * A LinkedHashset, which contains {@link WidgetIgnorableUITask}. It will be processed by this thread periodically.
      * Use hashset can help to improve the performance.
      */
-    // private ConcurrentLinkedQueue<WidgetIgnorableUITask> tasksQueue;
-    private LinkedHashSet<WidgetIgnorableUITask> tasksQueue;
+	private ConcurrentLinkedQueue<WidgetIgnorableUITask> nonIgnorableTasksQueue;
+    private LinkedHashSet<WidgetIgnorableUITask> ignorableTasksQueue;
     private Thread thread;
 
     private int guiRefreshCycle = 100;
@@ -59,11 +60,10 @@ public final class GUIRefreshThread implements Runnable {
      */
     private GUIRefreshThread(boolean isRuntime) {
         this.isRuntime = isRuntime;
-        // tasksQueue = new ConcurrentLinkedQueue<WidgetIgnorableUITask>();
         rcpDisplay = DisplayUtils.getDisplay();
-        tasksQueue = new LinkedHashSet<>();
+		ignorableTasksQueue = new LinkedHashSet<>();
+		nonIgnorableTasksQueue = new ConcurrentLinkedQueue<>();
         resetAsyncEmpty = new Runnable() {
-
             @Override
             public void run() {
                 asyncEmpty = true;
@@ -121,7 +121,7 @@ public final class GUIRefreshThread implements Runnable {
         boolean isEmpty;
         while (true) {
             synchronized (this) {
-                isEmpty = tasksQueue.isEmpty();
+                isEmpty = ignorableTasksQueue.isEmpty() && nonIgnorableTasksQueue.isEmpty();
             }
             if (!isEmpty) {
                 start = System.currentTimeMillis();
@@ -152,23 +152,31 @@ public final class GUIRefreshThread implements Runnable {
         if (!asyncEmpty)
             return;
         asyncEmpty = false;
-        Object[] tasksArray;
+		Object[] ignorableTasksArray;
+		Object[] nonIgnorableTasksArray;
         // copy the tasks queue.
         synchronized (this) {
-            tasksArray = tasksQueue.toArray();
-            tasksQueue.clear();
+            ignorableTasksArray = ignorableTasksQueue.toArray();
+			ignorableTasksQueue.clear();
+			nonIgnorableTasksArray = nonIgnorableTasksQueue.toArray();
+			nonIgnorableTasksQueue.clear();
         }
         if (rcpDisplay == null || rcpDisplay.isDisposed())
             return;
-        for (Object o : tasksArray) {
+        for (Object o : ignorableTasksArray) {
             try {
-                rcpDisplay.asyncExec(((WidgetIgnorableUITask) o)
-                        .getRunnableTask());
+                rcpDisplay.asyncExec(((WidgetIgnorableUITask)o).getRunnableTask());
             } catch (Exception e) {
-                OPIBuilderPlugin.getLogger().log(Level.WARNING,
-                        "Display has been disposed.", e);
+                OPIBuilderPlugin.getLogger().log(Level.WARNING, "Display has been disposed.", e);
             }
         }
+		for (Object o : nonIgnorableTasksArray) {
+			try {
+				rcpDisplay.asyncExec(((WidgetIgnorableUITask)o).getRunnableTask());
+			} catch (Exception e) {
+				OPIBuilderPlugin.getLogger().log(Level.WARNING, "Display has been disposed.", e);
+			}
+		}
         rcpDisplay.asyncExec(resetAsyncEmpty);
     }
 
@@ -179,7 +187,11 @@ public final class GUIRefreshThread implements Runnable {
      *            the ignorable UI task.
      */
     public synchronized void addIgnorableTask(final WidgetIgnorableUITask task) {
-        tasksQueue.remove(task);
-        tasksQueue.add(task);
+		ignorableTasksQueue.remove(task);
+		ignorableTasksQueue.add(task);
     }
+
+	public void addNonIgnorableTask(final WidgetIgnorableUITask task) {
+		nonIgnorableTasksQueue.add(task);
+	}
 }

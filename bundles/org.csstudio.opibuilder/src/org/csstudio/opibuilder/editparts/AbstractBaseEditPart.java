@@ -775,14 +775,16 @@ public abstract class AbstractBaseEditPart extends AbstractGraphicalEditPart imp
      * @param handler
      *            the property change handler
      */
-    public final void setPropertyChangeHandler(final String propertyId,
-            final IWidgetPropertyChangeHandler handler) {
-        WidgetPropertyChangeListener listener = propertyListenerMap
-                .get(propertyId);
-        if (listener != null) {
-            listener.addHandler(handler);
-        }
+    public final void setPropertyChangeHandler(final String propertyId, final IWidgetPropertyChangeHandler handler) {
+		setPropertyChangeHandler(propertyId, handler, false);
     }
+
+	public final void setPropertyChangeHandler(final String propertyId, final IWidgetPropertyChangeHandler handler, boolean allUpdates) {
+		WidgetPropertyChangeListener listener = propertyListenerMap.get(propertyId);
+		if (listener != null) {
+			listener.addHandler(handler, allUpdates ? WidgetPropertyChangeListener.UpdatePolicy.ALL_UPDATES : WidgetPropertyChangeListener.UpdatePolicy.ONLY_LATEST_UPDATE);
+		}
+	}
 
     /**
      * Set the property value of the widget. If the new value is same as the old value, it will be ignored.

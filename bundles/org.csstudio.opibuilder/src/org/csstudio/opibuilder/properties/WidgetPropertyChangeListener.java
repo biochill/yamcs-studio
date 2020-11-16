@@ -30,7 +30,13 @@ public class WidgetPropertyChangeListener implements PropertyChangeListener {
 
     private AbstractBaseEditPart editpart;
     private AbstractWidgetProperty widgetProperty;
-    private List<IWidgetPropertyChangeHandler> handlers;
+    private List<IWidgetPropertyChangeHandler> latestUpdateHandlers;
+	private List<IWidgetPropertyChangeHandler> allUpdatesHandlers;
+
+	public enum UpdatePolicy {
+		ALL_UPDATES,
+		ONLY_LATEST_UPDATE
+	}
 
     /**Constructor.
      * @param editpart backlint to the editpart, which uses this listener.
@@ -39,43 +45,66 @@ public class WidgetPropertyChangeListener implements PropertyChangeListener {
             AbstractWidgetProperty property) {
         this.editpart = editpart;
         this.widgetProperty = property;
-        handlers = new ArrayList<IWidgetPropertyChangeHandler>();
+		latestUpdateHandlers = new ArrayList<IWidgetPropertyChangeHandler>();
+		allUpdatesHandlers = new ArrayList<IWidgetPropertyChangeHandler>();
     }
 
     @Override
     public void propertyChange(final PropertyChangeEvent evt) {
-        Runnable runnable = new Runnable() {
-            @Override
-            public synchronized void run() {
-                if(editpart == null || !editpart.isActive()){
-                    return;
-                }
-                for(IWidgetPropertyChangeHandler h : handlers) {
-                    IFigure figure = editpart.getFigure();
-                    h.handleChange(
-                            evt.getOldValue(), evt.getNewValue(), figure);
+		boolean isRunMode = editpart.getExecutionMode() == ExecutionMode.RUN_MODE;
+		
+		if (!latestUpdateHandlers.isEmpty()) {
+			Runnable runnable = new Runnable() {
+				@Override
+				public synchronized void run() {
+					if (editpart == null || !editpart.isActive()) {
+						return;
+					}
+					for (IWidgetPropertyChangeHandler h : latestUpdateHandlers) {
+						IFigure figure = editpart.getFigure();
+						h.handleChange(evt.getOldValue(), evt.getNewValue(), figure);
+					}
+				}
+			};
+			Display display = editpart.getViewer().getControl().getDisplay();
+			WidgetIgnorableUITask task = new WidgetIgnorableUITask(widgetProperty, runnable, display);
+			GUIRefreshThread.getInstance(isRunMode).addIgnorableTask(task);
+		}
 
-                }
-            }
-        };
-        Display display = editpart.getViewer().getControl().getDisplay();
-        WidgetIgnorableUITask task = new WidgetIgnorableUITask(widgetProperty, runnable, display);
-
-        GUIRefreshThread.getInstance(
-                editpart.getExecutionMode() == ExecutionMode.RUN_MODE)
-                .addIgnorableTask(task);
-    }
+		if (!allUpdatesHandlers.isEmpty()) {
+			Runnable runnable = new Runnable() {
+				@Override
+				public synchronized void run() {
+					if (editpart == null || !editpart.isActive()) {
+						return;
+					}
+					for (IWidgetPropertyChangeHandler h : allUpdatesHandlers) {
+						IFigure figure = editpart.getFigure();
+						h.handleChange(evt.getOldValue(), evt.getNewValue(), figure);
+					}
+				}
+			};
+			Display display = editpart.getViewer().getControl().getDisplay();
+			WidgetIgnorableUITask task = new WidgetIgnorableUITask(widgetProperty, runnable, display);
+			GUIRefreshThread.getInstance(isRunMode).addNonIgnorableTask(task);
+		}
+	}
 
     /**Add handler, which is informed when a property changed.
      * @param handler
      */
-    public void addHandler(final IWidgetPropertyChangeHandler handler) {
+    public void addHandler(final IWidgetPropertyChangeHandler handler, UpdatePolicy policy) {
         assert handler != null;
-        handlers.add(handler);
+		if (policy == UpdatePolicy.ALL_UPDATES) {
+			allUpdatesHandlers.add(handler);
+		} else {
+			latestUpdateHandlers.add(handler);
+		}
     }
 
     public void removeAllHandlers(){
-        handlers.clear();
+		allUpdatesHandlers.clear();
+		latestUpdateHandlers.clear();
     }
 
 }

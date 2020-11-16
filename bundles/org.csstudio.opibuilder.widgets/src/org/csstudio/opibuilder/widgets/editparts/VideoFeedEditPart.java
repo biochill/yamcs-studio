@@ -84,7 +84,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 				return false;
 			}
 		};
-		setPropertyChangeHandler(AbstractPVWidgetModel.PROP_PVVALUE, handler);
+		setPropertyChangeHandler(AbstractPVWidgetModel.PROP_PVVALUE, handler, true);
 	}
 
 	/**
@@ -196,6 +196,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 			ByteBuffer bb = hexStringToByteBuffer(textValue.substring(8, 8 + vidLength*2));
 
 			// Do not check sequence counter if this is the first packet.
+//			debugOutput("Received packet " + seqCount);
 			if (prevSeqCount != -1) {
 				int expectedCount = (prevSeqCount + 1) & 0xffff;
 				if (expectedCount != seqCount) {
@@ -215,6 +216,8 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 			h264Adaptor = null;
 			videoTrack.resetBuffer();
 		} catch (JCodecException e) {
+			setFigureText("Could not decode: " + e.getMessage());
+			h264Adaptor = null;
 			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, "-");
 			getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, "-");
 			getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, "-");
@@ -246,7 +249,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 					if (HAVE_DEBUG_OUTPUT) {
 						debugOutput("Allocating new H264 decoder with healthy packet");
 					} else {
-						setFigureText(""); // Remove text
+//						setFigureText(""); // Remove text
 					}
 					h264Adaptor = new VideoH264Adaptor(packet.getData());
 					getVideoFeedFigure().setVideoFPS(videoTrack.fps);
@@ -258,41 +261,36 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 
 			if (h264Adaptor != null) {
 
-				try {
-					if (videoTrack.ignoreBFrames) {
-						// Just decode and display
-						
-						long time1 = System.currentTimeMillis();
-						Frame pic = h264Adaptor.decodePacket(packet);
-						long time2 = System.currentTimeMillis();
-						getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+				if (videoTrack.ignoreBFrames) {
+					// Just decode and display
+					
+					long time1 = System.currentTimeMillis();
+					Frame pic = h264Adaptor.decodePacket(packet);
+					long time2 = System.currentTimeMillis();
+					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
 
-						if (pic.getFrameType() != SliceType.B) {
-							final BufferedImage image = AWTUtil.toBufferedImage(pic);
-							getVideoFeedFigure().setVideoData(image);
+					if (pic.getFrameType() != SliceType.B) {
+						final BufferedImage image = AWTUtil.toBufferedImage(pic);
+						getVideoFeedFigure().setVideoData(image);
 
-							// Set some details to be displayed
-							getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
-							getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
-							getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
-						}
-
-					} else {
-						// Decode and display according to fps timing
-						
-						long time1 = System.currentTimeMillis();
-						h264Adaptor.addPacket(packet);
-						long time2 = System.currentTimeMillis();
-						getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
-						
-						// Start new timer task to show new images. Otherwise wait until current time task will show it.
-						if (frameTask == null && h264Adaptor.hasNextFrame()) {
-							startSchedule();
-						}
+						// Set some details to be displayed
+						getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
+						getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
+						getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
 					}
-				} catch (JCodecException e) {
-					debugOutput("Could not decode: " + e.getMessage());
-					h264Adaptor = null;
+
+				} else {
+					// Decode and display according to fps timing
+					
+					long time1 = System.currentTimeMillis();
+					h264Adaptor.addPacket(packet);
+					long time2 = System.currentTimeMillis();
+					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+					
+					// Start new timer task to show new images. Otherwise wait until current time task will show it.
+					if (frameTask == null && h264Adaptor.hasNextFrame()) {
+						startSchedule();
+					}
 				}
 				
 			} // have adapter

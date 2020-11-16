@@ -211,7 +211,11 @@ public final class VideoFeedFigure extends Figure {
 		if (isDetailsVisible) {
 			// Draw text about additional infos
 			videoDetails.setValue(VideoDetailMap.Render, String.format("%.3f", (double)renderMillis*0.001));
-			videoDetails.setValue(VideoDetailMap.FPS, String.format("%.1f (%.1f)", realFPS, videoFPS));
+			if (videoFPS != 0) {
+				videoDetails.setValue(VideoDetailMap.FPS, String.format("%.1f (%.1f)", realFPS, videoFPS));
+			} else {
+				videoDetails.setValue(VideoDetailMap.FPS, String.format("%.1f", realFPS));
+			}
 			videoDetails.draw(gfx, bounds, VideoDetailMap.Corner.LEFT_BOTTOM);
 		}
 

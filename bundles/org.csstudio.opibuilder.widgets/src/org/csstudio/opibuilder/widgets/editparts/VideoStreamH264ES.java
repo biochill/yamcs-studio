@@ -116,12 +116,11 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
     public Packet nextFrame() {
 		// At the end of this method, bb is positioned after the last valid NALU
 		
-		ByteBuffer bb = videoBuffer;
-//		System.out.println("Searching for frame @" + bb.position() + "-" + bb.limit());
+//		System.out.println("Searching for frame @" + videoBuffer.position() + "-" + videoBuffer.limit());
 
         while (true) {
-			int nalPos = bb.position();
-            ByteBuffer buf = nextNALUnit(bb);
+			int nalPos = videoBuffer.position();
+            ByteBuffer buf = nextNALUnit(videoBuffer);
 			if (buf == null) {
 				System.out.println("  No more NALU @" + nalPos);
 				break;
@@ -142,11 +141,10 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 				// -> flush buffer and keep reading NALUs.
 				if (sh == null) {
 //					System.out.println(String.format("  Found Slice @%d, discarding (no PPS) and flushing buffer", nalPos));
-					ByteBuffer newBuf = ByteBuffer.allocate(bb.capacity());
-					newBuf.put(bb);
+					ByteBuffer newBuf = ByteBuffer.allocate(videoBuffer.capacity());
+					newBuf.put(videoBuffer);
 					newBuf.flip();
 					videoBuffer = newBuf;
-					bb = newBuf;
 					lastPacketMark = -1;
 					continue;
 				}
@@ -155,17 +153,17 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 
 				if (prevNu != null && prevSh != null && !sameFrame(prevNu, nu, prevSh, sh)) {
 					
-					bb.position(nalPos);
+					videoBuffer.position(nalPos);
 
 					// result = buffer with complete packet
-					ByteBuffer result = bb.duplicate();
+					ByteBuffer result = videoBuffer.duplicate();
 					result.position(lastPacketMark);
 					result.limit(nalPos);
 					Packet p = detectPoc(result, prevNu, prevSh);
 					if (p != null) {
 						// Have complete packet -> compact video buffer; we will re-read this slice NALU
-						ByteBuffer newBuf = ByteBuffer.allocate(bb.capacity());
-						newBuf.put(bb); // add remainder of videoBuffer
+						ByteBuffer newBuf = ByteBuffer.allocate(videoBuffer.capacity());
+						newBuf.put(videoBuffer); // add remainder of videoBuffer
 						newBuf.flip();
 						videoBuffer = newBuf;
 						lastPacketMark = 0;

@@ -36,7 +36,6 @@ public final class VideoFeedFigure extends Figure {
 
     protected VideoFeedModel model;
 	protected Image image;
-	protected ImageData imageData;
 	protected String dataDescription = "Waiting for video";
 	private final VideoDetailMap videoDetails = VideoDetailMap.videoDetails();
 	private boolean isDetailsVisible = false;
@@ -148,9 +147,15 @@ public final class VideoFeedFigure extends Figure {
 	 * @param bufferedImage the image to be displayed
 	 */
 	public void setVideoData(BufferedImage bufferedImage) throws JCodecException {
-		imageData = convertToSWT(bufferedImage);
-		if (imageData == null) {
+		// First dispose of the image
+		if (image != null && !image.isDisposed()) {
+			image.dispose();
 			image = null;
+		}
+
+		// Make new image
+		ImageData imageData = convertToSWT(bufferedImage);
+		if (imageData == null) {
 			dataDescription = "Image Error";
 			throw new JCodecException("Unsupported color model");
 		}
@@ -195,8 +200,8 @@ public final class VideoFeedFigure extends Figure {
 			gfx.fillRectangle(bounds);
         } else {
 			// Draw image
-			Rectangle srcArea = new Rectangle(0, 0, imageData.width, imageData.height);
-			gfx.drawImage(image, srcArea, bounds);
+			Rectangle srcRect = new Rectangle(0, 0, image.getBounds().width, image.getBounds().height);
+			gfx.drawImage(image, srcRect, bounds);
 		}
 
 		long renderMillis = System.currentTimeMillis() - time1;

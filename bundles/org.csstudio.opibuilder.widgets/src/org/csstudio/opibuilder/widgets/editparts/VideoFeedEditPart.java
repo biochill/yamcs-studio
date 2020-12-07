@@ -249,7 +249,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 					if (HAVE_DEBUG_OUTPUT) {
 						debugOutput("Allocating new H264 decoder with healthy packet");
 					} else {
-//						setFigureText(""); // Remove text
+						setFigureText(""); // Remove text
 					}
 					h264Adaptor = new VideoH264Adaptor(packet.getData());
 					getVideoFeedFigure().setVideoFPS(videoTrack.fps);

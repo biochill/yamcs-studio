@@ -45,6 +45,7 @@ import org.eclipse.ui.services.IEvaluationService;
 import org.yamcs.client.Command;
 import org.yamcs.client.CommandSubscription;
 import org.yamcs.client.YamcsClient;
+import org.yamcs.protobuf.Mdb.SignificanceInfo.SignificanceLevelType;
 import org.yamcs.protobuf.SubscribeCommandsRequest;
 import org.yamcs.studio.commanding.stack.CommandStack.AutoMode;
 import org.yamcs.studio.commanding.stack.CommandStack.StackMode;
@@ -64,6 +65,19 @@ public class CommandStackView extends ViewPart implements YamcsAware {
 
     private CommandStackTableViewer commandTableViewer;
     private ConnectionStateProvider connectionStateProvider;
+
+    private ISourceProviderListener sourceProviderListener = new ISourceProviderListener() {
+        @Override
+        public void sourceChanged(int sourcePriority, String sourceName, Object sourceValue) {
+            refreshState();
+        }
+
+        @Override
+        @SuppressWarnings("rawtypes")
+        public void sourceChanged(int sourcePriority, Map sourceValuesByName) {
+            refreshState();
+        }
+    };
 
     private Color errorBackgroundColor;
     private Styler bracketStyler;
@@ -431,68 +445,13 @@ public class CommandStackView extends ViewPart implements YamcsAware {
         connectionStateProvider = RCPUtils.findSourceProvider(getViewSite(),
                 ConnectionStateProvider.STATE_KEY_CONNECTED,
                 ConnectionStateProvider.class);
-        connectionStateProvider.addSourceProviderListener(new ISourceProviderListener() {
-            @Override
-            public void sourceChanged(int sourcePriority, String sourceName, Object sourceValue) {
-                refreshState();
-            }
-
-            @Override
-            @SuppressWarnings("rawtypes")
-            public void sourceChanged(int sourcePriority, Map sourceValuesByName) {
-                refreshState();
-            }
-        });
+        connectionStateProvider.addSourceProviderListener(sourceProviderListener);
 
         // Add the popup menu for pasting commands
         addPopupMenu();
 
         // Set initial state
         refreshState();
-
-        /*CommandingCatalogue.getInstance().addClearanceListener((enabled, clearance) -> {
-            Display.getDefault().asyncExec(() -> {
-                if (!enabled) {
-                    clearanceLabel.setText("");
-                    clearanceLabel.setVisible(false);
-                    clearanceImageLabel.setImage(null);
-                    clearanceImageLabel.setVisible(false);
-                    clearanceSeparator.setVisible(false);
-                } else if (clearance == null) {
-                    clearanceLabel.setVisible(true);
-                    clearanceLabel.setText("No clearance");
-                    clearanceImageLabel.setImage(null);
-                    clearanceImageLabel.setVisible(false);
-                    clearanceSeparator.setVisible(true);
-                } else {
-                    clearanceLabel.setText("Clearance:");
-                    clearanceLabel.setVisible(true);
-                    clearanceImageLabel.setVisible(true);
-                    clearanceSeparator.setVisible(true);
-                    switch (clearance) {
-                    case NONE:
-                        clearanceImageLabel.setImage(level0Image);
-                        break;
-                    case WATCH:
-                        clearanceImageLabel.setImage(level1Image);
-                        break;
-                    case WARNING:
-                        clearanceImageLabel.setImage(level2Image);
-                        break;
-                    case DISTRESS:
-                        clearanceImageLabel.setImage(level3Image);
-                        break;
-                    case CRITICAL:
-                        clearanceImageLabel.setImage(level4Image);
-                        break;
-                    case SEVERE:
-                        clearanceImageLabel.setImage(level5Image);
-                        break;
-                    }
-                }
-                bottomLeft.layout(true);
-            });
-        });*/
 
         YamcsPlugin.addListener(this);
     }
@@ -514,6 +473,51 @@ public class CommandStackView extends ViewPart implements YamcsAware {
                     .setProcessor(processor)
                     .build());
         }
+    }
+
+    @Override
+    public void updateClearance(boolean enabled, SignificanceLevelType level) {
+        Display.getDefault().asyncExec(() -> {
+            if (!enabled) {
+                clearanceLabel.setText("");
+                clearanceLabel.setVisible(false);
+                clearanceImageLabel.setImage(null);
+                clearanceImageLabel.setVisible(false);
+                clearanceSeparator.setVisible(false);
+            } else if (level == null) {
+                clearanceLabel.setVisible(true);
+                clearanceLabel.setText("No clearance");
+                clearanceImageLabel.setImage(null);
+                clearanceImageLabel.setVisible(false);
+                clearanceSeparator.setVisible(true);
+            } else {
+                clearanceLabel.setText("Clearance:");
+                clearanceLabel.setVisible(true);
+                clearanceImageLabel.setVisible(true);
+                clearanceSeparator.setVisible(true);
+                switch (level) {
+                case NONE:
+                    clearanceImageLabel.setImage(level0Image);
+                    break;
+                case WATCH:
+                    clearanceImageLabel.setImage(level1Image);
+                    break;
+                case WARNING:
+                    clearanceImageLabel.setImage(level2Image);
+                    break;
+                case DISTRESS:
+                    clearanceImageLabel.setImage(level3Image);
+                    break;
+                case CRITICAL:
+                    clearanceImageLabel.setImage(level4Image);
+                    break;
+                case SEVERE:
+                    clearanceImageLabel.setImage(level5Image);
+                    break;
+                }
+            }
+            bottomLeft.layout(true);
+        });
     }
 
     public void selectFirst() {
@@ -869,6 +873,7 @@ public class CommandStackView extends ViewPart implements YamcsAware {
         if (subscription != null) {
             subscription.cancel(true);
         }
+        connectionStateProvider.removeSourceProviderListener(sourceProviderListener);
         YamcsPlugin.removeListener(this);
         super.dispose();
     }

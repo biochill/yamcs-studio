@@ -120,7 +120,6 @@ public class YamcsPlugin extends AbstractUIPlugin {
         if (plugin.yamcsClient != null) {
             listener.onYamcsConnected();
         }
-
         if (plugin.instance != null) {
             listener.changeInstance(plugin.instance);
         }
@@ -129,9 +128,12 @@ public class YamcsPlugin extends AbstractUIPlugin {
             listener.changeProcessorInfo(plugin.processor);
         }
         if (plugin.clearanceSubscription != null) {
+            boolean enabled = plugin.processor != null && plugin.processor.getCheckCommandClearance();
             ClearanceInfo clearanceInfo = plugin.clearanceSubscription.getCurrent();
             if (clearanceInfo != null && clearanceInfo.hasLevel()) {
-                listener.updateClearance(clearanceInfo.getLevel());
+                listener.updateClearance(enabled, clearanceInfo.getLevel());
+            } else {
+                listener.updateClearance(enabled, null);
             }
         }
     }
@@ -393,10 +395,11 @@ public class YamcsPlugin extends AbstractUIPlugin {
     private static void setupGlobalClearanceSubscription() {
         plugin.clearanceSubscription = getYamcsClient().createClearanceSubscription();
         plugin.clearanceSubscription.addMessageListener(info -> {
+            boolean enabled = plugin.processor != null && plugin.processor.getCheckCommandClearance();
             if (info.hasLevel()) {
-                plugin.listeners.forEach(l -> l.updateClearance(info.getLevel()));
+                plugin.listeners.forEach(l -> l.updateClearance(enabled, info.getLevel()));
             } else {
-                plugin.listeners.forEach(l -> l.updateClearance(null));
+                plugin.listeners.forEach(l -> l.updateClearance(enabled, null));
             }
         });
         plugin.clearanceSubscription.sendMessage(Empty.getDefaultInstance());
@@ -454,7 +457,7 @@ public class YamcsPlugin extends AbstractUIPlugin {
         plugin.clearanceSubscription = null;
 
         plugin.listeners.forEach(listener -> {
-            listener.updateClearance(null);
+            listener.updateClearance(false, null);
             listener.changeInstance(null);
             listener.changeProcessor(null, null);
             listener.changeProcessorInfo(null);

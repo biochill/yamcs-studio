@@ -28,9 +28,10 @@ import org.jcodec.common.model.Packet.FrameType;
 
 /**
  * Copied and modified from BufferH264ES.java (JCodec).
- * Most of this class is copied from JCodec and not modified.
+ * Most of this class is copied from JCodec and not modified. The method nextFrame() was heavily modified.
+ *
  * Its purpose is to accumulate a buffer of binary H.264 video data and to parse it for frames.
- * Important new methods are injectChunk() and nextFrame().
+ * Important new methods are injectChunk(), nextFrame(), packetFromCurrentData().
  *
  * @author Sven Thoennissen - Space Applications Services
  */
@@ -78,6 +79,13 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 		lastPacketMark = -1;
 		prevNu = null;
 		prevSh = null;
+	}
+	
+	/**
+	 * Forget collected SPS and PPS infos.
+	 * Currently unused.
+	 */
+	void resetSpsPps() {
 		pps.clear();
 		sps.clear();
 	}
@@ -111,6 +119,7 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 	 *
 	 * @return A frame, or null if no frame was detected.
 	 * @see injectChunk()
+	 * @see packetFromCurrentData()
 	 */
     @Override
     public Packet nextFrame() {
@@ -152,27 +161,10 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 //				System.out.println(String.format("  Found Slice @%d, frameNum=%d type=%s ppsid=%d pocType=%d nal_ref_idc=%d", nalPos, sh.frameNum, sh.sliceType, sh.picParameterSetId, sh.sps.picOrderCntType, nu.nal_ref_idc));
 
 				if (prevNu != null && prevSh != null && !sameFrame(prevNu, nu, prevSh, sh)) {
+
+					videoBuffer.position(nalPos); // go to beginning of new slice, is not part of new packet
 					
-					videoBuffer.position(nalPos);
-
-					// result = buffer with complete packet
-					ByteBuffer result = videoBuffer.duplicate();
-					result.position(lastPacketMark);
-					result.limit(nalPos);
-					Packet p = detectPoc(result, prevNu, prevSh);
-					if (p != null) {
-						// Have complete packet -> compact video buffer; we will re-read this slice NALU
-						ByteBuffer newBuf = ByteBuffer.allocate(videoBuffer.capacity());
-						newBuf.put(videoBuffer); // add remainder of videoBuffer
-						newBuf.flip();
-						videoBuffer = newBuf;
-						lastPacketMark = 0;
-//						System.out.println("  Compacting video buffer, new buffer @" + videoBuffer.position() + "-" + videoBuffer.limit());
-
-						prevSh = null;
-						prevNu = null;
-					}
-					return p;
+					return packetFromCurrentData();
                 }
 				
 //				System.out.println("  Found Slice @" + nalPos);
@@ -214,10 +206,38 @@ public class VideoStreamH264ES implements DemuxerTrack, Demuxer {
 		return null;
     }
 
-	// MARK: - Copied from BufferH264ES
+	/**
+	 * Returns the current valid H.264 frame.
+	 *
+	 * @return A frame packet, or null if no frame was detected.
+	 */
+	Packet packetFromCurrentData() {
+		if (prevNu == null || prevSh == null || lastPacketMark == -1)
+			return null;
+		
+		ByteBuffer result = videoBuffer.duplicate();
+		result.position(lastPacketMark);
+		result.limit(videoBuffer.position());
+		Packet p = detectPoc(result, prevNu, prevSh);
+		if (p != null) {
+			// Have packet, compact video buffer
+			ByteBuffer newBuf = ByteBuffer.allocate(videoBuffer.capacity());
+			newBuf.put(videoBuffer);
+			newBuf.flip();
+			videoBuffer = newBuf;
+			lastPacketMark = -1;
+			System.out.println(String.format("  Creating packet, pts=%d ts=%d do=%d, new internal buffer @%d-%d", p.getPts(), p.getTimescale(), p.getDisplayOrder(), videoBuffer.position(), videoBuffer.limit()));
+			
+			prevSh = null;
+			prevNu = null;
+		}
+		return p;
+	}
+	
+	// MARK: - Copied from BufferH264ES, with subtle modifications for robustness and debugging
 
 	/**
-	 * Mostly copied from BufferH264ES, with some checks.
+	 * Copied from BufferH264ES, added some checks.
 	 */
     private SliceHeader readSliceHeader(ByteBuffer buf, NALUnit nu) {
         BitReader br = BitReader.createBitReader(buf);

@@ -91,6 +91,11 @@ public class VideoH264Adaptor implements ContainerAdaptor
 		return frame;
 	}
 	
+	/**
+	 * Sort the GOP list by display order. (POC = Picture Order Count)
+	 *
+	 * @param gop an array of H.264 frames
+	 */
 	protected void sortByDisplay(ArrayList<Frame> gop) {
 		Collections.sort(gop, new Comparator<Frame>() {
 			@Override
@@ -100,6 +105,12 @@ public class VideoH264Adaptor implements ContainerAdaptor
 		});
 	}
 
+	/**
+	 * Indicates whether there is a frame available.
+	 * There could be frames with future POC but this method indicates if a frame with the next expected POC is available.
+	 *
+	 * @return true if there is a frame available, or false if there is no frame available.
+	 */
 	synchronized boolean hasNextFrame() {
 		if (!orderedFrames.isEmpty()) {
 			ArrayList<Frame> gop = orderedFrames.getFirst();
@@ -112,6 +123,11 @@ public class VideoH264Adaptor implements ContainerAdaptor
 		return false;
 	}
 
+	/**
+	 * Return the next expected frame.
+	 *
+	 * @return frame at expected POC
+	 */
 	synchronized Frame getNextFrame() {
 		if (!orderedFrames.isEmpty()) {
 			ArrayList<Frame> gop = orderedFrames.getFirst();
@@ -167,7 +183,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	
 	/**
 	 * Overridden method to return a MediaInfo instance.
-	 * This method is unused.
+	 * This method is unused but the interface requires it.
 	 *
 	 * @return        Initialiized MediaInfo instance.
 	 * @see           MediaInfo

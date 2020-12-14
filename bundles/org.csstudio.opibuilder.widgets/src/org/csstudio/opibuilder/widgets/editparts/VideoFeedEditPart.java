@@ -35,8 +35,10 @@ import org.jcodec.api.JCodecException;
  */
 public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	
-	private final boolean HAVE_DEBUG_OUTPUT = false; // true = show more debug infos in status text
-	
+	// Video feed widget settings
+	private final boolean HAVE_DEBUG_OUTPUT = false; // true = show more debug infos in widget
+	private final boolean HAVE_PACKETLOSS_MESSAGE_IN_DISPLAY = true; // true = show packetloss message in widget
+
 	private List<String> textLines;
 	
 	private VideoStreamH264ES videoTrack;
@@ -201,14 +203,30 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 				int expectedCount = (prevSeqCount + 1) & 0xffff;
 				if (expectedCount != seqCount) {
 					// Jump detected -> stream is interrupted, we need to reset the decoder and streamer, and wait for new SPS/PPS units
-					setFigureText(String.format("Sequence counter jumped (%d -> %d), waiting for key frame", prevSeqCount, seqCount));
-					h264Adaptor = null;
+					if (HAVE_PACKETLOSS_MESSAGE_IN_DISPLAY) {
+						setFigureText(String.format("Sequence counter jumped (%d -> %d)", prevSeqCount, seqCount));
+					}
+
+					// Decode frame from what we have in the buffer before we flush it
+					Packet packet = videoTrack.packetFromCurrentData();
+					if (packet != null) {
+						processStreamPacket(packet);
+					}
+					
+					debugOutput("  Flushing buffer");
 					videoTrack.resetBuffer();
 				}
 			}
 			prevSeqCount = seqCount;
 			getVideoFeedFigure().setDetail(VideoDetailMap.PacketNo, String.valueOf(seqCount));
-			feed(bb);
+
+			// Add chunk data to stream, then attempt to read next frame
+			videoTrack.injectChunk(bb);
+			Packet packet = videoTrack.nextFrame();
+			if (packet != null) {
+				processStreamPacket(packet);
+			}
+
 		} catch (NumberFormatException e) {
 			debugOutput(String.format("Could not handle video packet: " + e.getMessage()));
 		} catch (BufferOverflowException e) {
@@ -234,72 +252,72 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	 * @param bb Binary data to be decoded.
 	 * @throws java.nio.BufferOverflowException if the injected buffer could not be stored
 	 */
-	protected void feed(ByteBuffer bb) throws BufferOverflowException, JCodecException
+	protected void processStreamPacket(Packet packet) throws BufferOverflowException, JCodecException
 	{
-		videoTrack.injectChunk(bb);
-
-		Packet packet = videoTrack.nextFrame();
-		if (packet != null) {
-			
-			// Create new decoder if there is a useful packet
-			if (h264Adaptor == null) {
-				// Score: +60 = contains image, +20 = contains SPS, +20 = contains PPS
-				int score = H264Decoder.probe(packet.getData());
-				if (score == 100) {
-					if (HAVE_DEBUG_OUTPUT) {
-						debugOutput("Allocating new H264 decoder with healthy packet");
-					} else {
-						setFigureText(""); // Remove text
-					}
-					h264Adaptor = new VideoH264Adaptor(packet.getData());
-					getVideoFeedFigure().setVideoFPS(videoTrack.fps);
+		// Create new decoder if there is a useful packet
+		if (h264Adaptor == null) {
+			// Score: +60 = contains image, +20 = contains SPS, +20 = contains PPS
+			int score = H264Decoder.probe(packet.getData());
+			if (score == 100) {
+				if (HAVE_DEBUG_OUTPUT) {
+					debugOutput("Allocating new H264 decoder with healthy packet");
 				} else {
-					// Not a H264 packet, or missing PPS/SPS NALUs
-//					debugOutput("Could not decode packet, waiting for more data");
 				}
+				h264Adaptor = new VideoH264Adaptor(packet.getData());
+				getVideoFeedFigure().setVideoFPS(videoTrack.fps);
+			} else {
+				// Not a H264 packet, or missing PPS/SPS NALUs
+				debugOutput("Could not decode packet, waiting for more data");
+			}
+		}
+
+		if (h264Adaptor == null)
+			return;
+
+		if (videoTrack.ignoreBFrames) {
+			// Just decode and display the next frame, no fps timing
+			
+			long time1 = System.currentTimeMillis();
+			Frame pic = h264Adaptor.decodePacket(packet); // can throw JCodecException
+			long time2 = System.currentTimeMillis();
+			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+
+			if (HAVE_PACKETLOSS_MESSAGE_IN_DISPLAY) {
+				if (pic.getFrameType() == SliceType.I) {
+					setFigureText(""); // Remove "Sequence counter jumped" status text in widget
+				}
+			} else {
+				setFigureText(""); // Remove "Waiting for video" status text in widget
 			}
 
-			if (h264Adaptor != null) {
+			// Do not decode B frames, we're expecting a live stream, so we decode only I and P frames
+			if (pic.getFrameType() != SliceType.B) {
+				final BufferedImage image = AWTUtil.toBufferedImage(pic);
+				getVideoFeedFigure().setVideoData(image);
 
-				if (videoTrack.ignoreBFrames) {
-					// Just decode and display
-					
-					long time1 = System.currentTimeMillis();
-					Frame pic = h264Adaptor.decodePacket(packet);
-					long time2 = System.currentTimeMillis();
-					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+				// Set some details to be displayed
+				getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
+				getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
+				getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
+			}
 
-					if (pic.getFrameType() != SliceType.B) {
-						final BufferedImage image = AWTUtil.toBufferedImage(pic);
-						getVideoFeedFigure().setVideoData(image);
-
-						// Set some details to be displayed
-						getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
-						getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
-						getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
-					}
-
-				} else {
-					// Decode and display according to fps timing
-					
-					long time1 = System.currentTimeMillis();
-					h264Adaptor.addPacket(packet);
-					long time2 = System.currentTimeMillis();
-					getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
-					
-					// Start new timer task to show new images. Otherwise wait until current time task will show it.
-					if (frameTask == null && h264Adaptor.hasNextFrame()) {
-						startSchedule();
-					}
-				}
-				
-			} // have adapter
+		} else {
+			// Decode and display according to fps timing
 			
-		} // have packet
-		
+			long time1 = System.currentTimeMillis();
+			h264Adaptor.addPacket(packet);
+			long time2 = System.currentTimeMillis();
+			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+			
+			// Start new timer task to show new images. Otherwise wait until current time task will show it.
+			if (frameTask == null && h264Adaptor.hasNextFrame()) {
+				startSchedule();
+			}
+		}
 	} // func
 	
 	public class FrameTask extends TimerTask {
+		// This class is used only for fps timing
 
 		@Override
 		public void run() {
@@ -330,6 +348,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 		} // run
 	} // class
 	
+	// Method used only for fps timing
 	void startSchedule() {
 		double fps = videoTrack.fps > 0.01 ? videoTrack.fps : 5;
 		long intervalMillis = (long)(1000.0/fps);

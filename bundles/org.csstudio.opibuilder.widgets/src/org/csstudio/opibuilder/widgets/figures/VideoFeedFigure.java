@@ -208,12 +208,14 @@ public final class VideoFeedFigure extends Figure {
 
 //		gfx.pushState();
 
-		if (dataDescription != "") {
-			Dimension td = FigureUtilities.getTextExtents(dataDescription, gfx.getFont());
-			gfx.fillText(dataDescription, (bounds.width - td.width)/2, 0);
-		}
-		
 		if (isDetailsVisible) {
+
+			// Show status text at top center
+			if (dataDescription != "") {
+				Dimension td = FigureUtilities.getTextExtents(dataDescription, gfx.getFont());
+				gfx.fillText(dataDescription, (bounds.width - td.width)/2, 0);
+			}
+			
 			// Draw text about additional infos
 			videoDetails.setValue(VideoDetailMap.Render, String.format("%.3f", (double)renderMillis*0.001));
 			if (videoFPS != 0) {

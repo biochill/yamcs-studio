@@ -37,9 +37,7 @@ public class VideoFeedModel extends AbstractPVWidgetModel {
 		removeProperty(PROP_TOOLTIP);
 		removeProperty(PROP_FONT);
 		removeProperty(PROP_BACKCOLOR_ALARMSENSITIVE);
-		removeProperty(PROP_BORDER_ALARMSENSITIVE);
 		removeProperty(PROP_FORECOLOR_ALARMSENSITIVE);
-		removeProperty(PROP_ALARM_PULSING);
     }
 
 	public boolean getDetailsVisible() {

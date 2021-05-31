@@ -31,6 +31,7 @@ import org.jcodec.common.model.Packet.FrameType;
  * Most of this class is copied from JCodec and not modified. The method nextFrame() was heavily modified.
  *
  * Its purpose is to accumulate a buffer of binary H.264 video data and to parse it for frames.
+ * Once a frame is extracted it is removed from the buffer.
  * Important new methods are injectChunk(), nextFrame(), packetFromCurrentData().
  *
  * @author Sven Thoennissen - Space Applications Services

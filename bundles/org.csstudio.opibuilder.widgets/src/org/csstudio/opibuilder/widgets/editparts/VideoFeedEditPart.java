@@ -119,13 +119,15 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	
 	/**
 	 * Convenience method to return the model cast to the relevant class.
+	 *
+	 * @return An instance of VideoFeedModel.
 	 */
 	protected VideoFeedModel getVideoFeedModel() {
 		return (VideoFeedModel) getWidgetModel();
 	}
 
 	/**
-	 * Convenience method to return the model cast to the relevant class.
+	 * Convenience method to return the figure cast to the relevant class.
 	 *
 	 * @return An instance of VideoFeedFigure.
 	 */
@@ -134,19 +136,21 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	}
 
 	/**
-	 * Convenience method to show text in an overlay in front of the video.
+	 * Show text in an overlay at the top of the video.
 	 * Use this method to show status text in production environment.
 	 *
 	 * @param text Line of text to display.
 	 */
 	protected void setFigureText(String text) {
 		if (HAVE_DEBUG_OUTPUT) {
+			// Test environment: Show the last 10 lines
 			textLines.add(text);
 			while (textLines.size() > 10) {
 				textLines.remove(0);
 			}
 			getVideoFeedFigure().setDataDescription(String.join("\n", textLines));
 		} else {
+			// Production environment: Show only the last line
 			getVideoFeedFigure().setDataDescription(text);
 		}
 	}
@@ -154,6 +158,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	/**
 	 * Convenience method to show debugging text in an overlay in front of the video.
 	 * Use this method to show debugging text in test environment.
+	 * In production this method does not show any text.
 	 * It buffers a number of text lines so the overlay shows the last couple of text lines.
 	 *
 	 * @param text Line of text to display.
@@ -165,9 +170,10 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	}
 	
 	/**
-	 * Utility method to convert a hex string (e.g. 0x1419abf47529db) to a ByteBuffer.
+	 * Utility method to convert a hex string (e.g. 1419abf47529db) to a ByteBuffer.
 	 *
-	 * @return ByteBuffer that contains converted binary bytes.
+	 * @param s String that contains a hex string, not including the leading "0x"
+	 * @return ByteBuffer that contains converted bytes.
 	 */
 	public static ByteBuffer hexStringToByteBuffer(String s) throws NumberFormatException {
 		if ((s.length() & 1) == 1) {
@@ -183,44 +189,56 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 	
 	/**
 	 * Parse and validate the PV value, and forward the video data to the decoder.
-	 * This method extracts the video sequence counter and reset the decoder if the counter is not contiguous.
-	 * Forward video data to the decoder.
+	 * This method extracts the video sequence counter and checks for continuity (packet loss based on this counter).
+	 * The video data is added to an internal buffer (videoTrack).
+	 * If a full H.264 packet (containing a frame) is available, it is taken from the internal buffer and forwarded to the decoder.
+	 *
+	 * @param newValue Content of the PV, typically VType instance
 	 */
 	protected void handleVideoPacket(Object newValue) {
 		String textValue = newValue.toString();
+		// We expect a hexstring with leading "0x".
 		if (textValue.length() < 8 || !textValue.startsWith("0x")) {
 			debugOutput("Not a proper video packet (" + textValue.length() + "), " + textValue.substring(0, 10));
 			return;
 		}
 		try {
-			int seqCount = Integer.parseUnsignedInt(textValue.substring(2, 6), 16);
-			int vidLength = Integer.parseUnsignedInt(textValue.substring(6, 8), 16);
+			// String layout: 0xssssnndddddddd...
+			// s = sequence counter
+			// n = number of video data bytes to follow
+			// d = data bytes (max 253 bytes)
+			int seqCount = Integer.parseUnsignedInt(textValue.substring(2, 6), 16); // unsigned 16-bit counter
+			int vidLength = Integer.parseUnsignedInt(textValue.substring(6, 8), 16); // unsigned 8-bit length
 			ByteBuffer bb = hexStringToByteBuffer(textValue.substring(8, 8 + vidLength*2));
 
-			// Do not check sequence counter if this is the first packet.
+			// Do not check sequence counter if this is the very first packet.
 //			debugOutput("Received packet " + seqCount);
 			if (prevSeqCount != -1) {
 				int expectedCount = (prevSeqCount + 1) & 0xffff;
 				if (expectedCount != seqCount) {
-					// Jump detected -> stream is interrupted, we need to reset the decoder and streamer, and wait for new SPS/PPS units
+					// Jump detected -> stream is interrupted, try to salvage what's in the buffer
 					if (HAVE_PACKETLOSS_MESSAGE_IN_DISPLAY) {
 						setFigureText(String.format("Sequence counter jumped (%d -> %d)", prevSeqCount, seqCount));
 					}
 
-					// Decode frame from what we have in the buffer before we flush it
+					// Attempt to decode a frame from the buffer before we flush it
+					// Normally we are waiting for the next (non-)IDR frame to capture the frame-sequence
+					// but it is lost due to packet loss, so we try to decode the packet with the current (non-)IDR frame(s).
 					Packet packet = videoTrack.packetFromCurrentData();
 					if (packet != null) {
 						processStreamPacket(packet);
 					}
-					
+
+					// Forget everything that's left in the video buffer. We have to wait for the next NALU marker.
 					debugOutput("  Flushing buffer");
 					videoTrack.resetBuffer();
 				}
 			}
 			prevSeqCount = seqCount;
-			getVideoFeedFigure().setDetail(VideoDetailMap.PacketNo, String.valueOf(seqCount));
 
-			// Add chunk data to stream, then attempt to read next frame
+			getVideoFeedFigure().setDetail(VideoDetailMap.PACKETNO, String.valueOf(seqCount));
+
+			// Add chunk data to video buffer, then attempt to read next frame
 			videoTrack.injectChunk(bb);
 			Packet packet = videoTrack.nextFrame();
 			if (packet != null) {
@@ -236,20 +254,20 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 		} catch (JCodecException e) {
 			setFigureText("Could not decode: " + e.getMessage());
 			h264Adaptor = null;
-			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, "-");
-			getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, "-");
-			getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, "-");
-			getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, "-");
+			getVideoFeedFigure().setDetail(VideoDetailMap.DECODE, "-");
+			getVideoFeedFigure().setDetail(VideoDetailMap.FRAMENO, "-");
+			getVideoFeedFigure().setDetail(VideoDetailMap.RESOLUTION, "-");
+			getVideoFeedFigure().setDetail(VideoDetailMap.COLORSPACE, "-");
 		}
 	}
 	
 	/**
 	 * Forward the video data chunk to the video decoder.
-	 * This method reads the next video frame if any, and decodes it.
-	 * The frame must have valid SPS/PPS NAL units in order to be able to decode the frame properly.
+	 * This method decodes the given packet into a frame. A packet is a sequence of NAL units extracted from the video buffer.
+	 * If the decoder is currently null, the packet must include valid SPS/PPS NAL units in order to be able to decode the frame properly.
 	 * The frame is converted to a BufferedImage (AWT) and forwarded to the figure.
 	 *
-	 * @param bb Binary data to be decoded.
+	 * @param packet JCodec Packet to be decoded
 	 * @throws java.nio.BufferOverflowException if the injected buffer could not be stored
 	 */
 	protected void processStreamPacket(Packet packet) throws BufferOverflowException, JCodecException
@@ -258,12 +276,17 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 		if (h264Adaptor == null) {
 			// Score: +60 = contains image, +20 = contains SPS, +20 = contains PPS
 			int score = H264Decoder.probe(packet.getData());
+			// score = 60 -> frame is present
+			// score = +20 -> SPS is present
+			// score = +20 -> PPS is present
 			if (score == 100) {
+				// Frame + SPS/PPS are present! This is needed to initialize the decoder properly.
 				if (HAVE_DEBUG_OUTPUT) {
 					debugOutput("Allocating new H264 decoder with healthy packet");
 				} else {
 				}
 				h264Adaptor = new VideoH264Adaptor(packet.getData());
+				// Set the FPS value in the detail map as found in the optional VUI data from the SPS NALU.
 				getVideoFeedFigure().setVideoFPS(videoTrack.fps);
 			} else {
 				// Not a H264 packet, or missing PPS/SPS NALUs
@@ -275,12 +298,12 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 			return;
 
 		if (videoTrack.ignoreBFrames) {
-			// Just decode and display the next frame, no fps timing
+			// Just decode and display the next frame, do not perform any frame rate timing
 			
 			long time1 = System.currentTimeMillis();
 			Frame pic = h264Adaptor.decodePacket(packet); // can throw JCodecException
 			long time2 = System.currentTimeMillis();
-			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+			getVideoFeedFigure().setDetail(VideoDetailMap.DECODE, String.format("%.3f", (double)(time2 - time1)*0.001));
 
 			if (HAVE_PACKETLOSS_MESSAGE_IN_DISPLAY) {
 				if (pic.getFrameType() == SliceType.I) {
@@ -296,9 +319,9 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 				getVideoFeedFigure().setVideoData(image);
 
 				// Set some details to be displayed
-				getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
-				getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
-				getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
+				getVideoFeedFigure().setDetail(VideoDetailMap.FRAMENO, String.valueOf(pic.getFrameNo()));
+				getVideoFeedFigure().setDetail(VideoDetailMap.RESOLUTION, image.getWidth() + "x" + image.getHeight());
+				getVideoFeedFigure().setDetail(VideoDetailMap.COLORSPACE, pic.getColor().toString());
 			}
 
 		} else {
@@ -307,7 +330,7 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 			long time1 = System.currentTimeMillis();
 			h264Adaptor.addPacket(packet);
 			long time2 = System.currentTimeMillis();
-			getVideoFeedFigure().setDetail(VideoDetailMap.Decode, String.format("%.3f", (double)(time2 - time1)*0.001));
+			getVideoFeedFigure().setDetail(VideoDetailMap.DECODE, String.format("%.3f", (double)(time2 - time1)*0.001));
 			
 			// Start new timer task to show new images. Otherwise wait until current time task will show it.
 			if (frameTask == null && h264Adaptor.hasNextFrame()) {
@@ -331,9 +354,9 @@ public final class VideoFeedEditPart extends AbstractPVWidgetEditPart {
 						try {
 							getVideoFeedFigure().setVideoData(image);
 							// Set some details to be displayed
-							getVideoFeedFigure().setDetail(VideoDetailMap.FrameNo, String.valueOf(pic.getFrameNo()));
-							getVideoFeedFigure().setDetail(VideoDetailMap.Resolution, image.getWidth() + "x" + image.getHeight());
-							getVideoFeedFigure().setDetail(VideoDetailMap.ColorSpace, pic.getColor().toString());
+							getVideoFeedFigure().setDetail(VideoDetailMap.FRAMENO, String.valueOf(pic.getFrameNo()));
+							getVideoFeedFigure().setDetail(VideoDetailMap.RESOLUTION, image.getWidth() + "x" + image.getHeight());
+							getVideoFeedFigure().setDetail(VideoDetailMap.COLORSPACE, pic.getColor().toString());
 						} catch (JCodecException e) {
 							debugOutput(e.getMessage());
 						}

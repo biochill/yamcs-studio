@@ -12,13 +12,13 @@ import org.csstudio.swt.widgets.util.TextPainter;
 
 public class VideoDetailMap {
 
-	public final static String Resolution = "Resolution";
-	public final static String ColorSpace = "Colorspace";
+	public final static String RESOLUTION = "Resolution";
+	public final static String COLORSPACE = "Colorspace";
 	public final static String FPS = "FPS";
-	public final static String PacketNo = "Packet";
-	public final static String FrameNo = "Frame";
-	public final static String Render = "Render";
-	public final static String Decode = "Decode";
+	public final static String PACKETNO = "Packet";
+	public final static String FRAMENO = "Frame";
+	public final static String RENDER = "Render";
+	public final static String DECODE = "Decode";
 	
 	enum Corner { LEFT_TOP, LEFT_BOTTOM, RIGHT_TOP, RIGHT_BOTTOM }
 	

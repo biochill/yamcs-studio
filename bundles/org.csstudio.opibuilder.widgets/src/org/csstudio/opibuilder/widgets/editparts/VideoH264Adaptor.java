@@ -46,6 +46,15 @@ public class VideoH264Adaptor implements ContainerAdaptor
 		expectedPoc = 0;
 	}
 
+	/**
+	 * Adds a H.264 packet to the internal queue.
+	 * It also maintains the display order of the GOP.
+	 *
+	 * This method is used only if decoding of B-frames is enabled in the editpart.
+	 *
+	 * @param packet a H.264 packet
+	 * @throws JCodecException
+	 */
 	synchronized void addPacket(Packet packet) throws JCodecException {
 		Frame frame = decodePacket(packet);
 		if (frame == null)
@@ -80,6 +89,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	 *
 	 * @param packet a H.264 packet
 	 * @return Frame with image data
+	 * @throws JCodecException
 	 */
 	public Frame decodePacket(Packet packet) throws JCodecException {
 		if (vMeta == null) {
@@ -126,7 +136,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	/**
 	 * Return the next expected frame.
 	 *
-	 * @return frame at expected POC
+	 * @return frame at expected POC, or null if there is no frame available.
 	 */
 	synchronized Frame getNextFrame() {
 		if (!orderedFrames.isEmpty()) {
@@ -163,7 +173,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	 * This method is unused but the interface requires it.
 	 *
 	 * @param pkt a H.264 frame
-	 * @return        always false
+	 * @return always false
 	 */
 	@Override
 	public boolean canSeek(Packet pkt) {
@@ -173,7 +183,7 @@ public class VideoH264Adaptor implements ContainerAdaptor
 	/**
 	 * Allocate an array that can hold image data according to dimensions received in the metadata.
 	 *
-	 * @return        byte array sized accordingly
+	 * @return byte array sized according to the metadata allocated in the constructor
 	 */
 	@Override
 	public byte[][] allocatePicture() {
